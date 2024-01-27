@@ -44,7 +44,7 @@ CREATE TABLE item (
     start_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     end_date TIMESTAMP NOT NULL,
     starting_price FLOAT NOT NULL DEFAULT 0.0,
-    CURRENT_STATUS ENUM(
+    current_status ENUM(
         'pending',
         'active',
         'sold',
@@ -139,6 +139,7 @@ END &&
 
 CALL `RegisterSeller`('Abdi', 'abdi32@gmail.com', '123', '98928983', 'hawasa');
 
+SELECT * FROM seller
 
 -- ## Sign up for a buyer 
 CREATE PROCEDURE RegisterBuyer (IN full_name VARCHAR(100), IN email VARCHAR(100), IN `password` VARCHAR(100), IN phone_number VARCHAR(100), IN `address` VARCHAR(100))
@@ -148,19 +149,30 @@ END &&
 
 CALL RegisterBuyer('Faysel Abdella', 'faysel32@gmail.com', '123', '039887852', 'Adama, Ethiopia');
 
+SELECT * FROM buyer;
+-- ## Add money to buyer account
+CREATE PROCEDURE AddMoney (IN buyer_id_param INT, amount FLOAT)
+BEGIN
+UPDATE buyer
+SET account_balance = account_balance + amount
+WHERE buyer_id = buyer_id_param;
+END &&
+
+CALL AddMoney (1, 600000);
 
 SELECT * FROM buyer
 
 -- ## Adding items
-CREATE PROCEDURE AddItem (IN item_id INT, IN seller_id INT, IN item_title VARCHAR(200), item_description VARCHAR(500), item_image VARCHAR(300), start_date TIMESTAMP, end_date TIMESTAMP, starting_price FLOAT)
+CREATE PROCEDURE AddItem (IN item_id_param INT, IN seller_id_param INT, IN item_title VARCHAR(200), item_description VARCHAR(500), item_image VARCHAR(300), start_date TIMESTAMP, end_date TIMESTAMP, starting_price FLOAT)
 BEGIN
-INSERT INTO item(seller_id, item_title, item_description, start_date, end_date, starting_price) VALUES(seller_id, item_title, item_description, start_date, end_date, starting_price);
-INSERT INTO itemImage(item_id, image_URL) VALUES(item_id, item_image);  
+    INSERT INTO item(seller_id, item_title, item_description, start_date, end_date, starting_price) VALUES(seller_id_param, item_title, item_description, start_date, end_date, starting_price);
+
+    INSERT INTO itemImage(item_id_param, image_URL) VALUES(item_id, item_image);  
 END &&
 
 CALL AddItem(1, 1, "A 180 villa house", "This house is located around ASTU main get and it has a total of 8 rooms", "https://images.com/house/villa/1", "2024-01-27 10:00:00", "2024-02-02 10:00:00", 500000)
 
-
+SELECT * FROM item;
 
 -- ## Bid for item
 CREATE PROCEDURE BidItem (
@@ -174,9 +186,9 @@ SELECT * FROM bid
 
 -- ## submit a complain
 
-CREATE PROCEDURE ComplainSeller (IN complainer_id INT, IN seller_id INT, complain_text VARCHAR(700))
+CREATE PROCEDURE ComplainSeller (IN complainer_id_param INT, IN seller_id_param INT, complain_text VARCHAR(700))
 BEGIN
-INSERT INTO complain (complainer_id, seller_id, complain_text) VALUES(complainer_id, seller_id, complain_text);
+INSERT INTO complain (complainer_id, seller_id, complain_text) VALUES(complainer_id_param, seller_id_param, complain_text);
 END &&
 
 CALL ComplainSeller(1, 1, "He scammed me and the item is corrupted");
@@ -192,16 +204,36 @@ END &&
 CALL RegisterAdmin('Faysel Abdella', 'fayselcode@gmail.com', '123', 'ItemsAdmin');
 
 SELECT * FROM `admin`
--- @to_do procedures
--- PerformTransaction
--- 
---
---
---
---
---
---
---
+
+-- ## Perform transaction
+CREATE PROCEDURE PerformTransaction (IN item_id_param INT, IN seller_id_param INT, IN buyer_id_param INT, IN transaction_amount FLOAT)
+BEGIN
+    INSERT INTO `transaction` (item_id, seller_id, buyer_id, transaction_amount) VALUES (item_id_param, seller_id_param, buyer_id_param, transaction_amount);
+
+    SET @transaction_fee = transaction_amount * 0.05;
+    SET @buyer_balance = (SELECT account_balance FROM buyer WHERE buyer_id = buyer_id_param LIMIT 1);
+
+    IF @buyer_balance >= transaction_amount + @transaction_fee THEN 
+        UPDATE seller
+        SET account_balance = account_balance + (transaction_amount - @transaction_fee)
+        WHERE seller_id = seller_id_param;
+
+        UPDATE buyer
+        SET account_balance = account_balance - (transaction_amount - @transaction_fee)
+        WHERE buyer_id = buyer_id_param;
+
+        UPDATE item
+        SET current_status = 'sold'
+        WHERE item_id = item_id_param;
+    ELSE
+        SELECT 'Buyer does not have sufficient funds' AS error_message;        
+    END IF;
+END &&
+
+
+CALL PerformTransaction(1, 1, 4, 2000000);
+
+
 DELIMITER ;
 
 -- ########## Triggers ##########
@@ -227,6 +259,13 @@ SET total_users = total_users + 1,
     total_buyers = total_buyers + 1;
 END &&
 
+CREATE TRIGGER UpdateItemsStatistics 
+AFTER INSERT ON item
+FOR EACH ROW
+BEGIN
+UPDATE 'statistics' 
+SET total_posted_items = total_posted_items + 1
+END &&
 
 
 SELECT * FROM statistics
