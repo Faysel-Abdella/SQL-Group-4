@@ -96,6 +96,8 @@ CREATE TABLE complain (
    FOREIGN KEY (complainer_id) REFERENCES buyer (buyer_id),
     seller_id INT NOT NULL,
     FOREIGN KEY (seller_id) REFERENCES seller (seller_id),
+    transaction_id IN NOT NULL,
+    FOREIGN KEY (transaction_id) REFERENCES `transaction` (transaction_id),
     complain_text VARCHAR(700) NOT NULL,
     `status` ENUM('read', 'unread') DEFAULT 'unread'
 );
@@ -168,7 +170,7 @@ BEGIN
     INSERT INTO itemImage(item_id_param, image_URL) VALUES(item_id, item_image);  
 END &&
 
-CALL AddItem(1, 1, "A 180 villa house", "This house is located around ASTU main get and it has a total of 8 rooms", "https://images.com/house/villa/1", "2024-01-27 10:00:00", "2024-02-02 10:00:00", 500000)
+CALL AddItem(2, 1, "A 180 villa house", "This house is located around ASTU main get and it has a total of 8 rooms", "https://images.com/house/villa/1", "2024-01-27 10:00:00", "2024-02-02 10:00:00", 500000)
 
 SELECT * FROM item;
 
@@ -184,15 +186,15 @@ SELECT * FROM bid
 
 -- ## submit a complain
 
-CREATE PROCEDURE ComplainSeller (IN complainer_id_param INT, IN seller_id_param INT, complain_text VARCHAR(700))
+CREATE PROCEDURE ComplainSeller (IN complainer_id_param INT,IN transaction_id_param INT, IN seller_id_param INT, complain_text VARCHAR(700))
 BEGIN
-INSERT INTO complain (complainer_id, seller_id, complain_text) VALUES(complainer_id_param, seller_id_param, complain_text);
+INSERT INTO complain (complainer_id, transaction_id_param, seller_id, complain_text) VALUES(complainer_id_param, seller_id_param, complain_text);
 END &&
 
-CALL ComplainSeller(1, 1, "He scammed me and the item is corrupted");
+CALL ComplainSeller(1, 1, 1, "He scammed me and the item is corrupted");
 SELECT * FROM complain
 
--- ## Create item ADMIN
+-- ## Register admin
 
 CREATE PROCEDURE RegisterAdmin (IN full_name VARCHAR(100), email VARCHAR(100), `password` VARCHAR(100), `role` VARCHAR(20))
 BEGIN
@@ -201,6 +203,7 @@ END &&
 
 CALL RegisterAdmin('Faysel Abdella', 'fayselcode@gmail.com', '123', 'ItemsAdmin');
 CALL RegisterAdmin('Abdi', 'fayselcod@gmail.com', '123', 'UsersAdmin');
+CALL RegisterAdmin('super man', 'faysel12@gmail.com', '123', 'SuperAdmin');
 
 SELECT * FROM `admin`
 
@@ -224,6 +227,10 @@ BEGIN
         UPDATE item
         SET current_status = 'sold'
         WHERE item_id = item_id_param;
+
+        UPDATE `statistics`
+        SET total_sold_items = total_sold_items + 1;
+
     ELSE
         SELECT 'Buyer does not have sufficient funds' AS error_message;        
     END IF;
@@ -231,7 +238,40 @@ END &&
 
 CALL PerformTransaction(1, 1, 4, 2000000);
 
-SELECT * FROM transaction
+SELECT * FROM transaction;
+
+
+-- ## Verify a transaction
+CREATE PROCEDURE VerifyTransaction (IN admin_id_param INT, IN transaction_id_param INT)
+BEGIN
+
+    SET @this_admin_role = (SELECT `role` FROM `admin` WHERE admin_id = admin_id_param);
+
+    IF @this_admin_role = "SuperAdmin" THEN 
+        SET @transaction_seller_id = (SELECT seller_id FROM `transaction` WHERE transaction_id = transaction_id_param);
+        SET @transaction_money = (SELECT transaction_amount FROM `transaction` WHERE transaction_id = transaction_id_param);
+
+        UPDATE `transaction`
+        SET payment_status = 'completed'
+        WHERE transaction_id = transaction_id_param;
+
+        UPDATE seller
+        SET total_transactions = total_transactions + 1,
+            last_transaction_date = CURRENT_TIMESTAMP
+        WHERE seller_id = @transaction_seller_id;
+
+        UPDATE `statistics`
+        SET total_transactions = total_transactions + 1,
+            total_transaction_money = total_transaction_money + @transaction_money,
+            total_profit = @transaction_money * 0.05;
+        
+    ELSE
+        SELECT 'Non authorized admin' AS error_text;        
+    END IF;
+END &&
+
+CALL VerifyTransaction(3, 1);
+SELECT * FROM `transaction`;
 
 -- ## Active, suspense or ban a seller
 CREATE PROCEDURE ChangeSellerStatus (IN admin_id_param INT, IN seller_id_parm INT, IN new_status VARCHAR(20))
@@ -248,12 +288,37 @@ BEGIN
     END IF;
 END &&
 
-
 CALL ChangeSellerStatus (2, 1, 'banned');
 
-DROP PROCEDURE `ChangeSellerStatus`;
+
+CREATE PROCEDURE ChangeItemStatus (IN admin_id_param INT, IN item_id_param INT, IN new_status VARCHAR(20))
+BEGIN
+    SET @this_admin_role = (SELECT `role` FROM `admin` WHERE admin_id = admin_id_param);
+
+    IF @this_admin_role = "ItemsAdmin" THEN 
+        UPDATE item
+        SET current_status = new_status
+        WHERE item_id = item_id_param;
+
+        IF new_status = 'active' THEN
+            UPDATE `statistics`
+            SET total_active_items = total_active_items + 1;
+        ELSEIF new_status = 'rejected' THEN
+            UPDATE `statistics`
+            SET total_rejected_items = total_rejected_items + 1;
+        END IF;
+
+    ELSE
+        SELECT 'Non authorized admin' AS error_text;        
+    END IF;
+END &&
+
+CALL ChangeItemStatus(1,1,'active');
+SELECT * FROM item;
+
 DELIMITER ;
 
+DROP PROCEDURE `ChangeItemStatus`;
 -- ########## Triggers ##########
 
 -- ## Update the statistics table whenever a write operations performed on the seller, buyer, item, bid, transaction, complain tables
@@ -293,8 +358,6 @@ DELIMITER ;
 
 
 -- @to_do procedures with security
--- ChangeSellerStatus <- accept the status as a parameter 
--- VerifyTransaction <- when a transaction is verified add it to the statistics and seller_total_transaction using trigger
 -- ChangeItemStatus <- the same of above
 -- ReadComplains <- then change their status from 'unread' to 'read'
 -- 
