@@ -48,7 +48,6 @@ CREATE TABLE item (
         'pending',
         'active',
         'sold',
-        'expired',
         'rejected'
     ) DEFAULT 'pending'
 );
@@ -69,7 +68,6 @@ CREATE TABLE bid (
     bid_amount FLOAT NOT NULL CHECK (bid_amount > 0.0),
     bid_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
 
 CREATE TABLE itemsBid (
     items_bid_id INT PRIMARY KEY NOT NULL AUTO_INCREMENT,
@@ -202,6 +200,7 @@ INSERT INTO `admin` (full_name, email, `password`, `role`) VALUES(full_name, ema
 END &&
 
 CALL RegisterAdmin('Faysel Abdella', 'fayselcode@gmail.com', '123', 'ItemsAdmin');
+CALL RegisterAdmin('Abdi', 'fayselcod@gmail.com', '123', 'UsersAdmin');
 
 SELECT * FROM `admin`
 
@@ -230,10 +229,29 @@ BEGIN
     END IF;
 END &&
 
-
 CALL PerformTransaction(1, 1, 4, 2000000);
 
+SELECT * FROM transaction
 
+-- ## Active, suspense or ban a seller
+CREATE PROCEDURE ChangeSellerStatus (IN admin_id_param INT, IN seller_id_parm INT, IN new_status VARCHAR(20))
+BEGIN
+
+    SET @this_admin_role = (SELECT `role` FROM `admin` WHERE admin_id = admin_id_param);
+
+    IF @this_admin_role = "UsersAdmin" THEN 
+        UPDATE seller
+        SET `status` = new_status
+         WHERE seller_id = seller_id_parm;
+    ELSE
+        SELECT 'Non authorized admin' AS error_message;        
+    END IF;
+END &&
+
+
+CALL ChangeSellerStatus (2, 1, 'banned');
+
+DROP PROCEDURE `ChangeSellerStatus`;
 DELIMITER ;
 
 -- ########## Triggers ##########
@@ -263,8 +281,8 @@ CREATE TRIGGER UpdateItemsStatistics
 AFTER INSERT ON item
 FOR EACH ROW
 BEGIN
-UPDATE 'statistics' 
-SET total_posted_items = total_posted_items + 1
+UPDATE `statistics` 
+SET total_posted_items = total_posted_items + 1;
 END &&
 
 
@@ -273,38 +291,50 @@ SELECT * FROM statistics
 
 DELIMITER ;
 
+
+-- @to_do procedures with security
+-- ChangeSellerStatus <- accept the status as a parameter 
+-- VerifyTransaction <- when a transaction is verified add it to the statistics and seller_total_transaction using trigger
+-- ChangeItemStatus <- the same of above
+-- ReadComplains <- then change their status from 'unread' to 'read'
+-- 
+
+
+
+
+
 -- Granting permissions to UsersAdmin role
-GRANT SUSPEND ON seller TO UsersAdmin;
+-- GRANT SUSPEND ON seller TO UsersAdmin;
 
--- Granting permissions to SuperAdmin role
-GRANT SELECT ON statistics_table TO SuperAdmin;
-GRANT SELECT ON sellers TO SuperAdmin;
-GRANT SELECT ON buyers TO SuperAdmin;
-UPDATE transaction SET payment_status = 'completed' WHERE payment_status = 'pending' AND role = 'SuperAdmin';
--- Granting Permissions to Roles
+-- -- Granting permissions to SuperAdmin role
+-- GRANT SELECT ON statistics_table TO SuperAdmin;
+-- GRANT SELECT ON sellers TO SuperAdmin;
+-- GRANT SELECT ON buyers TO SuperAdmin;
+-- UPDATE transaction SET payment_status = 'completed' WHERE payment_status = 'pending' AND role = 'SuperAdmin';
+-- -- Granting Permissions to Roles
 
--- Granting permissions to the seller role
-GRANT SELECT, INSERT, UPDATE, DELETE ON item TO seller;
-GRANT SELECT, INSERT ON bid TO seller;
+-- -- Granting permissions to the seller role
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON item TO seller;
+-- GRANT SELECT, INSERT ON bid TO seller;
 
--- Granting permissions to the buyer role
-GRANT SELECT, INSERT, UPDATE ON bid TO buyer;
+-- -- Granting permissions to the buyer role
+-- GRANT SELECT, INSERT, UPDATE ON bid TO buyer;
 
--- Granting permissions to the administrator role
-GRANT ALL PRIVILEGES ON item TO administrator;
-GRANT ALL PRIVILEGES ON bid TO administrator;
-GRANT ALL PRIVILEGES ON transaction TO administrator;
+-- -- Granting permissions to the administrator role
+-- GRANT ALL PRIVILEGES ON item TO administrator;
+-- GRANT ALL PRIVILEGES ON bid TO administrator;
+-- GRANT ALL PRIVILEGES ON transaction TO administrator;
 
--- Creating a view to show approved items for buyers
-CREATE VIEW approved_items AS
-SELECT * FROM item WHERE CURRENT_STATUS = 'active';
+-- -- Creating a view to show approved items for buyers
+-- CREATE VIEW approved_items AS
+-- SELECT * FROM item WHERE CURRENT_STATUS = 'active';
 
--- Granting read permission on the approved_items view to the buyer role
-GRANT SELECT ON approved_items TO buyer;
+-- -- Granting read permission on the approved_items view to the buyer role
+-- GRANT SELECT ON approved_items TO buyer;
 
--- Ensuring that only authorized users can execute procedures
-GRANT EXECUTE ON PROCEDURE CreateSeller TO seller;
-GRANT EXECUTE ON PROCEDURE CreateBuyer TO buyer;
+-- -- Ensuring that only authorized users can execute procedures
+-- GRANT EXECUTE ON PROCEDURE CreateSeller TO seller;
+-- GRANT EXECUTE ON PROCEDURE CreateBuyer TO buyer;
 
 
 
