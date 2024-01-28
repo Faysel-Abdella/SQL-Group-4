@@ -46,7 +46,7 @@ CREATE TABLE item (
     starting_price FLOAT NOT NULL DEFAULT 0.0,
     current_status ENUM(
         'pending',
-        'active',
+        'available',
         'sold',
         'rejected'
     ) DEFAULT 'pending'
@@ -316,9 +316,23 @@ END &&
 CALL ChangeItemStatus(1,1,'active');
 SELECT * FROM item;
 
+CREATE PROCEDURE ReadComplain (IN admin_id_param INT, IN complain_id_param INT)
+BEGIN
+    SET @this_admin_role = (SELECT `role` FROM `admin` WHERE admin_id = admin_id_param);
+
+    IF @this_admin_role = "UsersAdmin" THEN 
+        UPDATE complain
+        SET `status` = 'read'
+        WHERE admin_id = admin_id_param;
+    ELSE
+        SELECT 'Non authorized admin' AS error_message;        
+    END IF;
+END &&
+
 DELIMITER ;
 
 DROP PROCEDURE `ChangeItemStatus`;
+
 -- ########## Triggers ##########
 
 -- ## Update the statistics table whenever a write operations performed on the seller, buyer, item, bid, transaction, complain tables
@@ -350,20 +364,19 @@ UPDATE `statistics`
 SET total_posted_items = total_posted_items + 1;
 END &&
 
-
 SELECT * FROM statistics
-
 
 DELIMITER ;
 
+-- ########## Views ##########
+DELIMITER &&
 
--- @to_do procedures with security
--- ChangeItemStatus <- the same of above
--- ReadComplains <- then change their status from 'unread' to 'read'
--- 
+CREATE VIEW GetAllAvailableItems AS
+SELECT item_title, item_description, posted_date, start_date, end_date , starting_price
+FROM item
+WHERE current_status = 'available';
 
-
-
+DELIMITER ;
 
 
 -- Granting permissions to UsersAdmin role
